@@ -1,0 +1,143 @@
+{
+  "project_title": "Context-Aware Performance Anomaly Ranking",
+  "lane": "CTR / Engagement Opportunity Scoring",
+  "warehouse_release": "v20260703",
+  "fact_table_rows_in_release": 78835655,
+  "unit": "client_hash_id x content_hash_id x calendar month",
+  "train_months": [
+    "2026-02",
+    "2026-03",
+    "2026-04"
+  ],
+  "validation_month": "2026-05",
+  "sealed_test_month": "2026-06",
+  "primary_min_impressions": 500,
+  "action_max_position": 20.0,
+  "features": [
+    "log_impressions",
+    "avg_position",
+    "days_with_impressions",
+    "active_day_fraction",
+    "position_volatility",
+    "impression_spikiness",
+    "daily_impression_cv",
+    "log_impression_momentum",
+    "position_shift"
+  ],
+  "w04_march_evidence": {
+    "eligible_page_month_rows": 101441,
+    "clients": 44,
+    "ctr_vs_position_verdict": "CONFIRMED",
+    "volume_verdict": "CONFIRMED",
+    "ranked_candidates": 22185
+  },
+  "split_rows": {
+    "train": 171108,
+    "validation": 60173,
+    "test": 52766
+  },
+  "may_comparison": [
+    {
+      "method": "Random forest",
+      "mae_pp": 0.24877653,
+      "weighted_mae_pp": 0.20832514,
+      "r2": 0.01903041
+    },
+    {
+      "method": "Ridge",
+      "mae_pp": 0.25687402,
+      "weighted_mae_pp": 0.23470667,
+      "r2": 0.00746795
+    },
+    {
+      "method": "W04 position baseline",
+      "mae_pp": 0.26993151,
+      "weighted_mae_pp": 0.23497991,
+      "r2": -0.1636962
+    },
+    {
+      "method": "Global median",
+      "mae_pp": 0.27663328,
+      "weighted_mae_pp": 0.24212913,
+      "r2": -0.18722182
+    }
+  ],
+  "client_holdout_comparison": [
+    {
+      "method": "Random forest",
+      "mae_pp": 0.22386798,
+      "weighted_mae_pp": 0.20378085,
+      "r2": 0.13797531
+    },
+    {
+      "method": "Ridge",
+      "mae_pp": 0.22577634,
+      "weighted_mae_pp": 0.20745841,
+      "r2": 0.12104649
+    },
+    {
+      "method": "W04 position baseline",
+      "mae_pp": 0.23108474,
+      "weighted_mae_pp": 0.21825003,
+      "r2": -0.08272163
+    },
+    {
+      "method": "Global median",
+      "mae_pp": 0.24384017,
+      "weighted_mae_pp": 0.233312,
+      "r2": -0.14594286
+    }
+  ],
+  "best_learned_method": "Random forest",
+  "selected_final_method": "W04 position baseline",
+  "selection_reason": "The learned models did not clear the frozen complexity bar on both later-time and unseen-client evidence, so the transparent W04 position baseline remains the final engine.",
+  "may_mae_improvement_vs_w04": 0.0783716788149928,
+  "client_holdout_mae_improvement_vs_w04": 0.03122990680324897,
+  "june_comparison": [
+    {
+      "method": "Ridge",
+      "mae_pp": 0.29470656,
+      "weighted_mae_pp": 0.41284711,
+      "r2": -0.02435925
+    },
+    {
+      "method": "Random forest",
+      "mae_pp": 0.29495166,
+      "weighted_mae_pp": 0.39575942,
+      "r2": -0.03880248
+    },
+    {
+      "method": "W04 position baseline",
+      "mae_pp": 0.31902975,
+      "weighted_mae_pp": 0.4267726,
+      "r2": -0.15910928
+    },
+    {
+      "method": "Global median",
+      "mae_pp": 0.327704,
+      "weighted_mae_pp": 0.43500933,
+      "r2": -0.19134194
+    }
+  ],
+  "june_selected_mae_improvement_vs_w04": 0.0,
+  "final_queue_candidates": 14955,
+  "sensitivity": [
+    {
+      "min_impressions": 100.0,
+      "candidate_count": 26737.0,
+      "top20_overlap_vs_500": 1.0
+    },
+    {
+      "min_impressions": 500.0,
+      "candidate_count": 14955.0,
+      "top20_overlap_vs_500": 1.0
+    },
+    {
+      "min_impressions": 1000.0,
+      "candidate_count": 10586.0,
+      "top20_overlap_vs_500": 1.0
+    }
+  ],
+  "random_seed": 42,
+  "claim_boundary": "Observed contextual underperformance and directional decision support; no causal traffic uplift claim."
+}

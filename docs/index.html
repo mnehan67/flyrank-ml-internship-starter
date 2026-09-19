@@ -1,0 +1,437 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Context-Aware Performance Anomaly Ranking — Muhammed Nehan</title>
+<style>
+:root {
+  --bg:#ffffff; --fg:#161616; --muted:#5b6470; --line:#d9dde3;
+  --soft:#f5f7f9; --accent:#163d66;
+}
+* { box-sizing:border-box; }
+body {
+  margin:0; font-family:Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+  color:var(--fg); background:var(--bg); line-height:1.65;
+}
+main { width:min(1050px,92vw); margin:0 auto; padding:56px 0 90px; }
+header { padding-bottom:32px; border-bottom:1px solid var(--line); }
+.eyebrow { color:var(--accent); font-weight:700; letter-spacing:.05em; text-transform:uppercase; font-size:.82rem; }
+h1 { font-size:clamp(2.1rem,5vw,4.1rem); line-height:1.02; max-width:920px; margin:.3rem 0 1rem; }
+h2 { margin-top:54px; padding-top:12px; border-top:1px solid var(--line); }
+h3 { margin-top:30px; }
+p, li { font-size:1.02rem; }
+.lede { font-size:1.22rem; color:var(--muted); max-width:850px; }
+.note {
+  background:var(--soft); border-left:4px solid var(--accent);
+  padding:15px 18px; margin:22px 0;
+}
+.metric-grid {
+  display:grid; grid-template-columns:repeat(auto-fit,minmax(190px,1fr)); gap:14px; margin:24px 0;
+}
+.metric {
+  border:1px solid var(--line); border-radius:10px; padding:16px;
+}
+.metric b { display:block; font-size:1.45rem; }
+img { max-width:100%; height:auto; border:1px solid var(--line); border-radius:10px; margin:14px 0 24px; }
+.data-table { border-collapse:collapse; width:100%; font-size:.88rem; overflow:auto; display:block; }
+.data-table th,.data-table td { border-bottom:1px solid var(--line); padding:8px 10px; text-align:left; white-space:nowrap; }
+.data-table th { background:var(--soft); }
+code { background:var(--soft); padding:.1em .3em; border-radius:4px; }
+a { color:var(--accent); }
+footer { margin-top:60px; color:var(--muted); border-top:1px solid var(--line); padding-top:20px; }
+</style>
+</head>
+<body>
+<main>
+<header>
+<div class="eyebrow">FlyRank ML Internship Capstone · Muhammed Nehan</div>
+<h1>Context-Aware Performance Anomaly Ranking</h1>
+<p class="lede">A leakage-safe system for learning expected search click-through performance, detecting high-impact under-capture, and producing an auditable human-review queue.</p>
+</header>
+
+<section id="abstract">
+<h2>Abstract</h2>
+<p>
+Editorial teams need to decide which visible pages deserve limited review capacity, but raw CTR thresholds are unfair because expected CTR changes with search position, traffic volume, and measurement stability.
+Using the FlyRank internship warehouse, this study aggregates daily search measurements into page-month observations and learns expected CTR from non-click operating context.
+A frozen position-adjusted rule is compared with Ridge and Random Forest regression using later-time validation plus a held-out-client stress test, with June 2026 kept as the final sealed test month.
+On the sealed June 2026 test, Ridge and Random Forest reduced MAE by 7.6% and 7.5%, respectively, versus the frozen W04 baseline; however, neither had cleared the predeclared 10% held-out-client complexity bar before June was opened, so the transparent W04 baseline remained the final action engine.
+The resulting positive expected-minus-observed CTR residual is scaled by impressions to form a directional ranked review queue; the output is decision support only and does not imply that an edit will causally increase traffic.
+</p>
+</section>
+
+<section id="introduction">
+<h2>1. Introduction / Problem Statement</h2>
+<p>
+The operational question is simple: <strong>which existing pages should a human inspect first?</strong>
+A universal CTR cutoff ignores the fact that a page near position 2 operates under a different click environment from a page near position 25.
+The project therefore treats low CTR as a <em>contextual performance anomaly</em>: first estimate what CTR is normally observed under measured search conditions, then prioritize large negative deviations only when enough exposure exists for the difference to matter.
+</p>
+<div class="note">
+<strong>Decision boundary.</strong> A score triggers review, not automatic publication. Query/SERP context, intent, seasonality, and content quality remain human checks.
+</div>
+<img src="assets/01_pipeline.png" alt="Capstone pipeline">
+</section>
+
+<section id="data">
+<h2>2. Data</h2>
+<p>
+The source is the gated FlyRank internship warehouse release <strong>v20260703</strong>. Its daily performance fact contains 78,835,655 rows at report-date × client × content grain.
+This study uses full monthly partitions from February through June 2026 and aggregates them to one pseudonymized client × content × month observation.
+January is excluded because the warehouse begins on January 27 and is therefore not a comparable full calendar month.
+</p>
+<p>
+Rows require valid GSC availability and at least 100 monthly impressions for extraction. The primary model comparison uses at least 500 impressions.
+The target is observed CTR in percentage points: <code>100 × clicks / impressions</code>.
+Clicks and CTR are never model inputs; IDs are grouping/audit keys only.
+</p>
+<div class="metric-grid">
+<div class="metric"><span>Train rows</span><b>171,108</b><small>Feb–Apr 2026</small></div>
+<div class="metric"><span>Validation rows</span><b>60,173</b><small>May 2026</small></div>
+<div class="metric"><span>Final test rows</span><b>52,766</b><small>June 2026</small></div>
+<div class="metric"><span>Frozen W04 March candidates</span><b>22,185</b><small>transparent rule</small></div>
+</div>
+</section>
+
+<section id="methodology">
+<h2>3. Methodology</h2>
+<p>
+The feature vector contains only non-click search context available by the end of the scored month:
+<code>log_impressions, avg_position, days_with_impressions, active_day_fraction, position_volatility, impression_spikiness, daily_impression_cv, log_impression_momentum, position_shift</code>.
+This makes the task end-of-period contextual monitoring rather than future-month forecasting.
+</p>
+<p>
+The frozen W04 baseline predicts the training-set median CTR for a page's position bucket.
+Two learned alternatives are prespecified: regularized Ridge regression and a constrained Random Forest.
+All preprocessing is fitted only on training rows.
+The primary split trains on February–April and validates on May; a second grouped test holds out entire clients.
+The learned models did not satisfy the predeclared complexity rule, so the transparent position-adjusted baseline was retained rather than claiming unnecessary ML value.
+Only after this selection is frozen are all pre-June observations used to fit the final engines and June opened once for evaluation.
+</p>
+<h3>May validation</h3>
+<table class="dataframe data-table">
+  <thead>
+    <tr style="text-align: right;">
+      <th>Method</th>
+      <th>MAE (pp)</th>
+      <th>Weighted MAE (pp)</th>
+      <th>R²</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>Random forest</td>
+      <td>0.24878</td>
+      <td>0.20833</td>
+      <td>0.01903</td>
+    </tr>
+    <tr>
+      <td>Ridge</td>
+      <td>0.25687</td>
+      <td>0.23471</td>
+      <td>0.00747</td>
+    </tr>
+    <tr>
+      <td>W04 position baseline</td>
+      <td>0.26993</td>
+      <td>0.23498</td>
+      <td>-0.16370</td>
+    </tr>
+    <tr>
+      <td>Global median</td>
+      <td>0.27663</td>
+      <td>0.24213</td>
+      <td>-0.18722</td>
+    </tr>
+  </tbody>
+</table>
+<h3>Held-out-client stress test</h3>
+<table class="dataframe data-table">
+  <thead>
+    <tr style="text-align: right;">
+      <th>Method</th>
+      <th>MAE (pp)</th>
+      <th>Weighted MAE (pp)</th>
+      <th>R²</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>Random forest</td>
+      <td>0.22387</td>
+      <td>0.20378</td>
+      <td>0.13798</td>
+    </tr>
+    <tr>
+      <td>Ridge</td>
+      <td>0.22578</td>
+      <td>0.20746</td>
+      <td>0.12105</td>
+    </tr>
+    <tr>
+      <td>W04 position baseline</td>
+      <td>0.23108</td>
+      <td>0.21825</td>
+      <td>-0.08272</td>
+    </tr>
+    <tr>
+      <td>Global median</td>
+      <td>0.24384</td>
+      <td>0.23331</td>
+      <td>-0.14594</td>
+    </tr>
+  </tbody>
+</table>
+</section>
+
+<section id="results">
+<h2>4. Results</h2>
+
+<p><strong>Predeclared selection result.</strong> The learned models did not clear the frozen
+complexity bar on both later-time and unseen-client evidence, so the transparent W04
+position baseline remains the final engine.</p>
+<div class="note">
+<strong>Sealed-test finding.</strong> After the method was frozen, Ridge achieved
+0.2947 MAE and Random Forest 0.2950, compared with
+0.3190 for the W04 baseline. That is a 7.6% and 7.5%
+reduction in June MAE, respectively. Random Forest also reduced impression-weighted
+June MAE by 7.3%. These test results are reported as evidence, but they do
+not retroactively change the predeclared model-selection rule.
+</div>
+
+<p>On the sealed June 2026 test, Ridge and Random Forest reduced MAE by 7.6% and 7.5%, respectively, versus the frozen W04 baseline; however, neither had cleared the predeclared 10% held-out-client complexity bar before June was opened, so the transparent W04 baseline remained the final action engine.</p>
+<h3>Final June comparison</h3>
+<table class="dataframe data-table">
+  <thead>
+    <tr style="text-align: right;">
+      <th>Method</th>
+      <th>MAE (pp)</th>
+      <th>Weighted MAE (pp)</th>
+      <th>R²</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>Ridge</td>
+      <td>0.29471</td>
+      <td>0.41285</td>
+      <td>-0.02436</td>
+    </tr>
+    <tr>
+      <td>Random forest</td>
+      <td>0.29495</td>
+      <td>0.39576</td>
+      <td>-0.03880</td>
+    </tr>
+    <tr>
+      <td>W04 position baseline</td>
+      <td>0.31903</td>
+      <td>0.42677</td>
+      <td>-0.15911</td>
+    </tr>
+    <tr>
+      <td>Global median</td>
+      <td>0.32770</td>
+      <td>0.43501</td>
+      <td>-0.19134</td>
+    </tr>
+  </tbody>
+</table>
+<img src="assets/02_june_method_comparison.png" alt="June method comparison">
+<img src="assets/03_expected_vs_observed.png" alt="Expected versus observed CTR">
+<img src="assets/04_error_by_position.png" alt="Error by search position">
+</section>
+
+<section id="limitations">
+<h2>5. Limitations & Honest Framing</h2>
+<ul>
+<li>The study is observational. A high opportunity score does not prove that changing metadata or content will increase clicks.</li>
+<li>Expected CTR is learned from measured context, but unobserved query intent, SERP features, brand/navigation behavior, and seasonality can still explain apparent underperformance.</li>
+<li>The model uses end-of-month context to monitor that month's performance; it is not a before-the-month traffic forecast.</li>
+<li>Client histories are unbalanced and search measurement availability differs across clients.</li>
+<li>The final June month is a one-period test. Continued deployment should monitor drift and later outcomes.</li>
+</ul>
+<p>A controlled rollout or A/B design would be required before making causal uplift claims.</p>
+</section>
+
+<section id="recommendations">
+<h2>6. Ranked Recommendations</h2>
+<p>
+For June, the final method creates <strong>14,955</strong> candidates after the primary eligibility rules.
+The score is <code>max(expected CTR − observed CTR, 0) / 100 × impressions</code>.
+It is best read as directional under-capture at meaningful exposure, not promised incremental clicks.
+</p>
+<table class="dataframe data-table">
+  <thead>
+    <tr style="text-align: right;">
+      <th>Rank</th>
+      <th>Impressions</th>
+      <th>Avg position</th>
+      <th>Observed CTR (pp)</th>
+      <th>Expected CTR (pp)</th>
+      <th>Gap (pp)</th>
+      <th>Opportunity score</th>
+      <th>Confidence</th>
+      <th>Reason</th>
+      <th>Suggested action</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>1</td>
+      <td>235427.0</td>
+      <td>7.0737</td>
+      <td>0.0191</td>
+      <td>0.2407</td>
+      <td>0.2216</td>
+      <td>521.6113</td>
+      <td>high</td>
+      <td>page_one_high_volume_ctr_gap</td>
+      <td>review_title_meta_and_intent</td>
+    </tr>
+    <tr>
+      <td>2</td>
+      <td>179662.0</td>
+      <td>7.8436</td>
+      <td>0.0000</td>
+      <td>0.2407</td>
+      <td>0.2407</td>
+      <td>432.3995</td>
+      <td>medium</td>
+      <td>page_one_high_volume_ctr_gap</td>
+      <td>review_title_meta_and_intent</td>
+    </tr>
+    <tr>
+      <td>3</td>
+      <td>169233.0</td>
+      <td>7.4788</td>
+      <td>0.0136</td>
+      <td>0.2407</td>
+      <td>0.2271</td>
+      <td>384.2996</td>
+      <td>high</td>
+      <td>page_one_high_volume_ctr_gap</td>
+      <td>review_title_meta_and_intent</td>
+    </tr>
+    <tr>
+      <td>4</td>
+      <td>171004.0</td>
+      <td>8.7372</td>
+      <td>0.0298</td>
+      <td>0.2407</td>
+      <td>0.2109</td>
+      <td>360.5620</td>
+      <td>high</td>
+      <td>page_one_high_volume_ctr_gap</td>
+      <td>review_title_meta_and_intent</td>
+    </tr>
+    <tr>
+      <td>5</td>
+      <td>145022.0</td>
+      <td>2.5376</td>
+      <td>0.0317</td>
+      <td>0.2308</td>
+      <td>0.1990</td>
+      <td>288.6662</td>
+      <td>high</td>
+      <td>page_one_high_volume_ctr_gap</td>
+      <td>review_title_meta_and_intent</td>
+    </tr>
+    <tr>
+      <td>6</td>
+      <td>292416.0</td>
+      <td>1.9275</td>
+      <td>0.1364</td>
+      <td>0.2308</td>
+      <td>0.0943</td>
+      <td>275.8062</td>
+      <td>high</td>
+      <td>page_one_high_volume_ctr_gap</td>
+      <td>review_title_meta_and_intent</td>
+    </tr>
+    <tr>
+      <td>7</td>
+      <td>234902.0</td>
+      <td>5.6998</td>
+      <td>0.1290</td>
+      <td>0.2407</td>
+      <td>0.1117</td>
+      <td>262.3478</td>
+      <td>high</td>
+      <td>page_one_high_volume_ctr_gap</td>
+      <td>review_title_meta_and_intent</td>
+    </tr>
+    <tr>
+      <td>8</td>
+      <td>212758.0</td>
+      <td>4.8083</td>
+      <td>0.1184</td>
+      <td>0.2407</td>
+      <td>0.1222</td>
+      <td>260.0529</td>
+      <td>high</td>
+      <td>page_one_high_volume_ctr_gap</td>
+      <td>review_title_meta_and_intent</td>
+    </tr>
+    <tr>
+      <td>9</td>
+      <td>107215.0</td>
+      <td>8.8960</td>
+      <td>0.0000</td>
+      <td>0.2407</td>
+      <td>0.2407</td>
+      <td>258.0385</td>
+      <td>medium</td>
+      <td>page_one_high_volume_ctr_gap</td>
+      <td>review_title_meta_and_intent</td>
+    </tr>
+    <tr>
+      <td>10</td>
+      <td>145592.0</td>
+      <td>7.5863</td>
+      <td>0.0735</td>
+      <td>0.2407</td>
+      <td>0.1672</td>
+      <td>243.4019</td>
+      <td>high</td>
+      <td>page_one_high_volume_ctr_gap</td>
+      <td>review_title_meta_and_intent</td>
+    </tr>
+  </tbody>
+</table>
+<img src="assets/05_top20_opportunity.png" alt="Top 20 opportunity scores">
+<h3>Stability</h3>
+<p>
+The queue is also rebuilt at 100, 500, and 1,000 monthly-impression floors without refitting the model. In this run, the <strong>top 20 were identical across all three floors (100% overlap)</strong>, indicating strong stability at the very top of the review queue.
+</p>
+<img src="assets/06_volume_floor_stability.png" alt="Ranking stability">
+</section>
+
+<section id="reproducibility">
+<h2>7. Reproducibility</h2>
+<p>
+The full workflow is implemented in the capstone notebook: remote DuckDB aggregation over partitioned Parquet, frozen feature construction, time-aware validation, client-holdout stress testing, final June evaluation, queue construction, public-safe figures, and metric receipts.
+</p>
+<ul>
+<li><a href="https://github.com/mnehan67/flyrank-ml-internship-starter">Repository</a></li>
+<li><a href="https://github.com/mnehan67/flyrank-ml-internship-starter/blob/main/work/notebooks/capstone.ipynb">Capstone notebook</a></li>
+<li>Random seed: 42</li>
+<li>Aggregate metric receipt: <code>work/outputs/capstone_metrics.json</code></li>
+</ul>
+</section>
+
+<section id="acknowledgments">
+<h2>8. Acknowledgments & Data Credit</h2>
+<p>
+Built on the <a href="https://flyrank.ai">FlyRank ML Internship dataset</a>.
+The project uses pseudonymized search-performance data and intentionally excludes client names, domains, URLs, private queries, credentials, and raw warehouse exports from the public paper.
+</p>
+</section>
+
+<footer>
+<p>Muhammed Nehan · FlyRank ML Internship Capstone · Generated reproducibly from the committed notebook.</p>
+</footer>
+</main>
+</body>
+</html>
